@@ -6,9 +6,22 @@ import { useRouter } from "next/navigation";
 import AuthGuard from "../../components/AuthGuard";
 import { API_BASE_URL, clearAuth, getAuthHeaders, getToken } from "../../lib/auth";
 
+type TaxonomyInfo = {
+  thai_name?: string;
+  common_name?: string;
+  scientific_name?: string;
+  kingdom?: string;
+  family?: string;
+  genus?: string;
+  species?: string;
+  taxonomy_status?: string;
+  note?: string;
+};
+
 type TopPrediction = {
   name: string;
   confidence: number;
+  taxonomy?: TaxonomyInfo;
 };
 
 type ReviewLog = {
@@ -21,6 +34,7 @@ type ReviewLog = {
   prediction: string;
   display_name: string;
   confidence: number;
+  taxonomy?: TaxonomyInfo;
   top3: TopPrediction[];
   model_accuracy: number;
   confidence_threshold: number;
@@ -60,7 +74,6 @@ const actualClassOptions = [
   "Kaffer Lime",
   "Kitchen Mint",
   "Laurel Clockvine",
-  "Long Pepper",
   "Mitragyna Speciosa",
   "Siam Weed",
   "Siamese Neem",
@@ -163,7 +176,8 @@ export default function VerifierReviewPage() {
   };
 
   useEffect(() => {
-    fetchReviewLogs();
+    // Start the async request after the effect callback to avoid a synchronous state update.
+    void Promise.resolve().then(() => fetchReviewLogs());
   }, [limit, statusFilter]);
 
   const submitReview = async (
@@ -255,7 +269,7 @@ export default function VerifierReviewPage() {
                   LeafVision <span className="text-emerald-300">AI</span>
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
-                  Verifier Review
+                  Taxonomy-aware Review
                 </p>
               </div>
             </Link>
@@ -273,6 +287,13 @@ export default function VerifierReviewPage() {
                 className="rounded-full border border-slate-700 px-4 py-2 text-sm font-bold text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
               >
                 History
+              </Link>
+
+              <Link
+                href="/plants"
+                className="rounded-full border border-slate-700 px-4 py-2 text-sm font-bold text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
+              >
+                Plant Database
               </Link>
 
               <Link
@@ -307,7 +328,7 @@ export default function VerifierReviewPage() {
               <div>
                 <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-300">
                   <span className="h-2 w-2 rounded-full bg-sky-400" />
-                  Human Verification
+                  Human Verification + Taxonomy
                 </div>
 
                 <h1 className="text-3xl font-black tracking-tight md:text-5xl">
@@ -318,8 +339,8 @@ export default function VerifierReviewPage() {
                 </h1>
 
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 md:text-base">
-                  Verifier ตรวจสอบผลลัพธ์การทำนายย้อนหลัง กด Approve เมื่อโมเดลทายถูก
-                  หรือ Reject พร้อมระบุ actual class เมื่อโมเดลทายผิด
+                  Verifier ตรวจสอบผลลัพธ์การทำนายย้อนหลัง พร้อมข้อมูลอนุกรมวิธาน
+                  เช่น ชื่อไทย ชื่อวิทยาศาสตร์ family genus และ species ก่อนกด Approve หรือ Reject
                 </p>
               </div>
 
@@ -425,7 +446,7 @@ export default function VerifierReviewPage() {
 
           <footer className="mt-8 rounded-3xl border border-white/10 bg-white/[0.03] p-5 text-center text-sm text-slate-400 backdrop-blur">
             <p>
-              Human Verification • Approve/Reject Prediction Logs • Verifier and Admin Access
+              Human Verification • Taxonomy-aware Review • Approve/Reject Prediction Logs • Verifier and Admin Access
             </p>
           </footer>
         </section>
@@ -521,6 +542,48 @@ function ReviewCard({
             </p>
           </div>
 
+          {log.taxonomy && Object.keys(log.taxonomy).length > 0 && (
+            <div className="mb-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm text-slate-300">Taxonomy Information</p>
+                  <p className="mt-1 text-xl font-black text-emerald-300">
+                    {log.taxonomy.thai_name || log.taxonomy.common_name || "-"}
+                  </p>
+                </div>
+
+                {log.taxonomy.taxonomy_status && (
+                  <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-black text-emerald-300">
+                    {log.taxonomy.taxonomy_status}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid gap-3 text-sm md:grid-cols-2">
+                <TaxonomyRow label="Thai Name" value={log.taxonomy.thai_name || "-"} />
+                <TaxonomyRow label="Common Name" value={log.taxonomy.common_name || "-"} />
+                <TaxonomyRow
+                  label="Scientific Name"
+                  value={log.taxonomy.scientific_name || "-"}
+                  italic
+                />
+                <TaxonomyRow label="Kingdom" value={log.taxonomy.kingdom || "-"} />
+                <TaxonomyRow label="Family" value={log.taxonomy.family || "-"} />
+                <TaxonomyRow label="Genus" value={log.taxonomy.genus || "-"} italic />
+                <TaxonomyRow label="Species" value={log.taxonomy.species || "-"} italic />
+              </div>
+
+              {log.taxonomy.note && (
+                <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-950/70 p-3">
+                  <p className="text-xs font-bold text-slate-400">Taxonomy Note</p>
+                  <p className="mt-1 text-sm leading-6 text-slate-200">
+                    {log.taxonomy.note}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <h3 className="mb-3 font-bold">Top 3 Predictions</h3>
 
@@ -548,6 +611,28 @@ function ReviewCard({
                       }}
                     />
                   </div>
+
+                  {item.taxonomy && (
+                    <div className="mt-3 rounded-xl border border-slate-700 bg-slate-950/50 p-3 text-xs leading-5 text-slate-400">
+                      <p>
+                        <span className="text-slate-500">Thai:</span>{" "}
+                        {item.taxonomy.thai_name || "-"}
+                      </p>
+
+                      <p>
+                        <span className="text-slate-500">Scientific:</span>{" "}
+                        <i>{item.taxonomy.scientific_name || "-"}</i>
+                      </p>
+
+                      <p>
+                        <span className="text-slate-500">Family:</span>{" "}
+                        {item.taxonomy.family || "-"}{" "}
+                        <span className="text-slate-600">|</span>{" "}
+                        <span className="text-slate-500">Genus:</span>{" "}
+                        <i>{item.taxonomy.genus || "-"}</i>
+                      </p>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -570,6 +655,10 @@ function ReviewCard({
                 onChange={(event) => onActualClassChange(event.target.value)}
                 className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-sky-400"
               >
+                {/* Keep a pre-existing legacy label selectable on old logs without offering it to new v12 reviews. */}
+                {actualClass && !actualClassOptions.includes(actualClass) && (
+                  <option value={actualClass}>{actualClass} (historical record)</option>
+                )}
                 {actualClassOptions.map((item) => (
                   <option key={item} value={item}>
                     {item}
@@ -681,6 +770,30 @@ function VerificationBadge({ status }: { status: string }) {
     </span>
   );
 }
+
+function TaxonomyRow({
+  label,
+  value,
+  italic = false,
+}: {
+  label: string;
+  value: string;
+  italic?: boolean;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-2">
+      <span className="text-slate-400">{label}</span>
+      {italic ? (
+        <span className="text-right font-semibold italic text-slate-200">
+          {value}
+        </span>
+      ) : (
+        <span className="text-right font-semibold text-slate-200">{value}</span>
+      )}
+    </div>
+  );
+}
+
 
 function formatDate(value?: string | null) {
   if (!value) return "-";

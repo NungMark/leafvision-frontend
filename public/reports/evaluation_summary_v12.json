@@ -1,0 +1,29 @@
+{
+  "model": "LeafVisionAI_12class_v12",
+  "architecture": "MobileNetV2",
+  "dataset": "dataset_clean_12_v12",
+  "train_images": 1387,
+  "validation_images": 460,
+  "test_images": 464,
+  "classes": [
+    "Bamboo Grass",
+    "Betel Vine",
+    "Hairy Basil",
+    "Holy Basil",
+    "Kaffer Lime",
+    "Kitchen Mint",
+    "Laurel Clockvine",
+    "Mitragyna Speciosa",
+    "Siam Weed",
+    "Siamese Neem",
+    "Tiger Herbal",
+    "Wildbetal Leafbush"
+  ],
+  "test_accuracy": 0.9892241358757019,
+  "test_loss": 0.03788923844695091,
+  "macro_precision": 0.9899341850561362,
+  "macro_recall": 0.9872175704412546,
+  "macro_f1": 0.9883539195706077,
+  "preprocessing": "PIL RGB resize 224x224 BILINEAR; float32 pixels 0-255; Rescaling to [-1,1] embedded in model",
+  "unknown_threshold_percent": 60.0
+}

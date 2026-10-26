@@ -6,9 +6,22 @@ import { useRouter } from "next/navigation";
 import AuthGuard from "../components/AuthGuard";
 import { API_BASE_URL, clearAuth, getAuthHeaders, getToken } from "../lib/auth";
 
+type TaxonomyInfo = {
+  thai_name?: string;
+  common_name?: string;
+  scientific_name?: string;
+  kingdom?: string;
+  family?: string;
+  genus?: string;
+  species?: string;
+  taxonomy_status?: string;
+  note?: string;
+};
+
 type TopPrediction = {
   name: string;
   confidence: number;
+  taxonomy?: TaxonomyInfo;
 };
 
 type PredictionLog = {
@@ -21,6 +34,7 @@ type PredictionLog = {
   prediction: string;
   display_name: string;
   confidence: number;
+  taxonomy?: TaxonomyInfo;
   top3: TopPrediction[];
   model_accuracy: number;
   confidence_threshold: number;
@@ -142,7 +156,8 @@ export default function HistoryPage() {
   };
 
   useEffect(() => {
-    fetchLogs();
+    // Start the async request after the effect callback to avoid a synchronous state update.
+    void Promise.resolve().then(() => fetchLogs());
   }, [limit]);
 
   const filteredLogs =
@@ -152,7 +167,6 @@ export default function HistoryPage() {
 
   const successCount = summary?.status_counts?.success || 0;
   const lowConfidenceCount = summary?.status_counts?.low_confidence || 0;
-  const errorCount = summary?.status_counts?.error || 0;
 
   const pendingReviewCount = logs.filter(
     (log) => !log.verified_status || log.verified_status === "pending"
@@ -187,7 +201,7 @@ export default function HistoryPage() {
                 LeafVision <span className="text-emerald-300">AI</span>
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                Plant Image Classification
+                Taxonomy-aware Plant Classification
               </p>
             </div>
           </Link>
@@ -213,6 +227,14 @@ export default function HistoryPage() {
             >
               History Logs
             </Link>
+
+            <Link
+              href="/plants"
+              className="rounded-full border border-slate-700 px-4 py-2 text-sm font-bold text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
+            >
+              Plant Database
+            </Link>
+
             {(isAdmin || isVerifier) && (
               <Link
                 href="/verifier/review"
@@ -247,7 +269,7 @@ export default function HistoryPage() {
             <div>
               <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
                 <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                Prediction Logs Monitoring
+                Taxonomy-aware Prediction Logs
               </div>
 
               <h1 className="text-3xl font-black tracking-tight md:text-5xl">
@@ -405,9 +427,10 @@ export default function HistoryPage() {
 
         <footer className="mt-8 rounded-3xl border border-white/10 bg-white/[0.03] p-5 text-center text-sm text-slate-400 backdrop-blur">
           <p>
-            Prediction Logs • Verification Tracking • SQLite Backend Storage • Confidence Threshold{" "}
+            Prediction Logs • Taxonomy Tracking • Verification Tracking • SQLite Backend Storage • Confidence Threshold{" "}
             <span className="font-bold text-yellow-300">60%</span> • Model
-            Accuracy <span className="font-bold text-emerald-300">85.5%</span>
+            v12 Internal <span className="font-bold text-emerald-300">98.92%</span> • External <span className="font-bold text-yellow-300">48.72%</span>
+            <span className="block mt-2 text-xs text-slate-500">ประวัติเดิมอาจสร้างโดยโมเดลรุ่นก่อนหน้า ค่าที่แสดงในแต่ละ Log คือค่าที่บันทึกตอนทำนาย</span>
           </p>
         </footer>
       </section>
@@ -504,6 +527,47 @@ function LogCard({ log }: { log: PredictionLog }) {
             </p>
           </div>
 
+          {log.taxonomy && Object.keys(log.taxonomy).length > 0 && (
+            <div className="mb-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm text-slate-300">Taxonomy Information</p>
+                  <p className="mt-1 text-xl font-black text-emerald-300">
+                    {log.taxonomy.thai_name || log.taxonomy.common_name || "-"}
+                  </p>
+                </div>
+
+                {log.taxonomy.taxonomy_status && (
+                  <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-black text-emerald-300">
+                    {log.taxonomy.taxonomy_status}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid gap-3 text-sm md:grid-cols-2">
+                <InfoRow label="Thai Name" value={log.taxonomy.thai_name || "-"} />
+                <InfoRow label="Common Name" value={log.taxonomy.common_name || "-"} />
+                <InfoRow
+                  label="Scientific Name"
+                  value={log.taxonomy.scientific_name || "-"}
+                />
+                <InfoRow label="Kingdom" value={log.taxonomy.kingdom || "-"} />
+                <InfoRow label="Family" value={log.taxonomy.family || "-"} />
+                <InfoRow label="Genus" value={log.taxonomy.genus || "-"} />
+                <InfoRow label="Species" value={log.taxonomy.species || "-"} />
+              </div>
+
+              {log.taxonomy.note && (
+                <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-950/70 p-3">
+                  <p className="text-xs font-bold text-slate-400">Taxonomy Note</p>
+                  <p className="mt-1 text-sm leading-6 text-slate-200">
+                    {log.taxonomy.note}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="mb-4 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -592,6 +656,28 @@ function LogCard({ log }: { log: PredictionLog }) {
                       }}
                     />
                   </div>
+
+                  {item.taxonomy && (
+                    <div className="mt-3 rounded-xl border border-slate-700 bg-slate-950/50 p-3 text-xs leading-5 text-slate-400">
+                      <p>
+                        <span className="text-slate-500">Thai:</span>{" "}
+                        {item.taxonomy.thai_name || "-"}
+                      </p>
+
+                      <p>
+                        <span className="text-slate-500">Scientific:</span>{" "}
+                        <i>{item.taxonomy.scientific_name || "-"}</i>
+                      </p>
+
+                      <p>
+                        <span className="text-slate-500">Family:</span>{" "}
+                        {item.taxonomy.family || "-"}{" "}
+                        <span className="text-slate-600">|</span>{" "}
+                        <span className="text-slate-500">Genus:</span>{" "}
+                        <i>{item.taxonomy.genus || "-"}</i>
+                      </p>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -606,6 +692,19 @@ function LogCard({ log }: { log: PredictionLog }) {
             <InfoRow label="Status" value={log.status} />
             <InfoRow label="Prediction" value={log.prediction} />
             <InfoRow label="Confidence" value={`${log.confidence}%`} />
+
+            {log.taxonomy && Object.keys(log.taxonomy).length > 0 && (
+              <>
+                <InfoRow label="Thai Name" value={log.taxonomy.thai_name || "-"} />
+                <InfoRow
+                  label="Scientific"
+                  value={log.taxonomy.scientific_name || "-"}
+                />
+                <InfoRow label="Family" value={log.taxonomy.family || "-"} />
+                <InfoRow label="Genus" value={log.taxonomy.genus || "-"} />
+              </>
+            )}
+
             <InfoRow label="File Size" value={formatFileSize(log.file_size)} />
             <InfoRow label="Created At" value={formatDate(log.created_at)} />
             <InfoRow

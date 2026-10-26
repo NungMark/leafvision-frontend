@@ -92,7 +92,11 @@ export default function AdminUsersPage() {
   };
 
   useEffect(() => {
-    fetchUsers();
+    const timer = window.setTimeout(() => {
+      void fetchUsers();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   const updateUserRole = async (userId: number, newRole: string) => {
@@ -257,6 +261,13 @@ export default function AdminUsersPage() {
                 className="rounded-full border border-slate-700 px-4 py-2 text-sm font-bold text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
               >
                 History
+              </Link>
+
+              <Link
+                href="/plants"
+                className="rounded-full border border-slate-700 px-4 py-2 text-sm font-bold text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
+              >
+                Plant Database
               </Link>
 
               <Link

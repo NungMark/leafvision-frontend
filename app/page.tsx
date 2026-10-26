@@ -6,9 +6,30 @@ import { useEffect, useState } from "react";
 import AuthGuard from "./components/AuthGuard";
 import { API_BASE_URL, clearAuth, getAuthHeaders, getToken } from "./lib/auth";
 
+type TaxonomyInfo = {
+  thai_name?: string;
+  common_name?: string;
+  scientific_name?: string;
+  kingdom?: string;
+  family?: string;
+  genus?: string;
+  species?: string;
+  taxonomy_status?: string;
+  note?: string;
+};
+
 type TopPrediction = {
   name: string;
   confidence: number;
+  taxonomy?: TaxonomyInfo;
+};
+
+type LeafCharacteristics = {
+  thai_name: string;
+  features: string[];
+  source_title: string;
+  source_url: string;
+  explanation_type: "botanical_reference";
 };
 
 type PredictionResult = {
@@ -16,11 +37,26 @@ type PredictionResult = {
   prediction: string;
   display_name: string;
   confidence: number;
+  taxonomy?: TaxonomyInfo;
+  leaf_characteristics?: LeafCharacteristics | null;
   message: string;
   top3: TopPrediction[];
   model_accuracy: number;
+  model_version?: string;
+  internal_test_accuracy?: number;
+  external_test_accuracy?: number;
   confidence_threshold: number;
   processing_time_seconds: number;
+};
+
+type GradCamResult = {
+  class_name: string;
+  thai_name?: string;
+  confidence: number;
+  feature_layer: string;
+  overlay_base64: string;
+  no_signal: boolean;
+  explanation_method: string;
 };
 
 type QueueStatus =
@@ -37,6 +73,9 @@ type QueueItem = {
   status: QueueStatus;
   result?: PredictionResult;
   error?: string;
+  gradcamLoading?: boolean;
+  gradcamError?: string;
+  gradcam?: GradCamResult;
 };
 
 export default function Home() {
@@ -115,6 +154,9 @@ export default function Home() {
       status: "processing",
       error: undefined,
       result: undefined,
+      gradcam: undefined,
+      gradcamError: undefined,
+      gradcamLoading: false,
     });
 
     const formData = new FormData();
@@ -149,6 +191,39 @@ export default function Home() {
       updateQueueItem(item.id, {
         status: "error",
         error: "เกิดข้อผิดพลาดในการวิเคราะห์ภาพ",
+      });
+    }
+  };
+
+  const generateGradCam = async (item: QueueItem) => {
+    updateQueueItem(item.id, {
+      gradcamLoading: true,
+      gradcamError: undefined,
+      gradcam: undefined,
+    });
+    const formData = new FormData();
+    formData.append("file", item.file);
+    try {
+      const response = await fetch(`${API_BASE_URL}/explain/gradcam`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: formData,
+      });
+      if (response.status === 401 || response.status === 403) {
+        clearAuth();
+        router.push("/login");
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(`Grad-CAM service returned ${response.status}`);
+      }
+      const data: GradCamResult = await response.json();
+      updateQueueItem(item.id, { gradcamLoading: false, gradcam: data });
+    } catch (error) {
+      console.error(error);
+      updateQueueItem(item.id, {
+        gradcamLoading: false,
+        gradcamError: "ไม่สามารถสร้างภาพ Grad-CAM ได้ แต่ผลทำนายปกติยังใช้งานได้",
       });
     }
   };
@@ -222,7 +297,7 @@ export default function Home() {
                   LeafVision <span className="text-emerald-300">AI</span>
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
-                  Plant Image Classification
+                  Taxonomy-aware Plant Classification
                 </p>
               </div>
             </Link>
@@ -266,6 +341,13 @@ export default function Home() {
                 </Link>
               )}
 
+              <Link
+                href="/plants"
+                className="rounded-full border border-slate-700 px-4 py-2 text-sm font-bold text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
+              >
+                Plant Database
+              </Link>
+
               <button
                 onClick={logout}
                 className="rounded-full border border-red-400/30 px-4 py-2 text-sm font-bold text-red-300 transition hover:bg-red-400/10"
@@ -282,7 +364,7 @@ export default function Home() {
               <div>
                 <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
                   <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                  Multi Upload + Prediction Queue + Protected API
+                  Multi Upload + Taxonomy-aware Prediction + Protected API
                 </div>
 
                 <h1 className="text-3xl font-black tracking-tight md:text-5xl">
@@ -440,6 +522,7 @@ export default function Home() {
                       disabled={processing}
                       onRetry={() => retryItem(item)}
                       onRemove={() => removeItem(item.id)}
+                      onGradCam={() => generateGradCam(item)}
                     />
                   ))}
                 </div>
@@ -449,9 +532,9 @@ export default function Home() {
 
           <footer className="mt-8 rounded-3xl border border-white/10 bg-white/[0.03] p-5 text-center text-sm text-slate-400 backdrop-blur">
             <p>
-              MobileNetV2 Fine-tuned • Test Accuracy{" "}
-              <span className="font-bold text-emerald-300">85.5%</span> • 13
-              Plant Classes • Confidence Threshold{" "}
+              MobileNetV2 v12 • 12 Plant Classes • Internal Test Accuracy{" "}
+              <span className="font-bold text-emerald-300">98.92%</span> • External Test Accuracy{" "}
+              <span className="font-bold text-yellow-300">48.72%</span> • Confidence Threshold{" "}
               <span className="font-bold text-yellow-300">60%</span> • JWT
               Protected
             </p>
@@ -467,11 +550,13 @@ function QueueResultCard({
   disabled,
   onRetry,
   onRemove,
+  onGradCam,
 }: {
   item: QueueItem;
   disabled: boolean;
   onRetry: () => void;
   onRemove: () => void;
+  onGradCam: () => void;
 }) {
   const statusStyle = getStatusStyle(item.status);
 
@@ -565,6 +650,119 @@ function QueueResultCard({
                 <p className="mt-1 text-xs leading-5 text-slate-400">
                   {item.result.message}
                 </p>
+
+                {item.result.status === "success" &&
+                  item.result.leaf_characteristics && (
+                    <LeafReferenceGuide data={item.result.leaf_characteristics} />
+                  )}
+
+                <section className="mt-4 rounded-2xl border border-sky-400/20 bg-slate-950/60 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-sky-300">Grad-CAM — AI ให้ความสำคัญกับบริเวณใด</h4>
+                      <p className="mt-1 text-xs text-slate-400">
+                        แสดงพื้นที่ที่สนับสนุนคะแนนของคลาสอันดับแรก ไม่ใช่การตรวจรูปร่างหรือขอบใบโดยตรง
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onGradCam}
+                      disabled={disabled || item.gradcamLoading}
+                      className="rounded-full border border-sky-400/40 bg-sky-400/10 px-4 py-2 text-xs font-bold text-sky-200 hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {item.gradcamLoading ? "กำลังสร้าง Heatmap..." : item.gradcam ? "สร้าง Grad-CAM อีกครั้ง" : "ดู Grad-CAM"}
+                    </button>
+                  </div>
+                  {item.gradcamError && <p role="alert" className="mt-3 text-xs text-amber-300">{item.gradcamError}</p>}
+                  {item.gradcam && (
+                    <div className="mt-4">
+                      <p className="mb-2 text-xs text-slate-300">
+                        คลาสที่อธิบาย: <strong className="text-sky-200">{item.gradcam.thai_name || item.gradcam.class_name}</strong>
+                        {` (${item.gradcam.confidence.toFixed(2)}%)`}
+                      </p>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <p className="mb-1 text-xs text-slate-400">ภาพต้นฉบับ</p>
+                          <img src={item.previewUrl} alt="ภาพใบไม้ต้นฉบับ" className="h-56 w-full rounded-xl border border-slate-700 bg-slate-900 object-contain" />
+                        </div>
+                        <div>
+                          <p className="mb-1 text-xs text-slate-400">ภาพ Grad-CAM (บริเวณร้อนคือจุดสนับสนุนคะแนนสูง)</p>
+                          <img
+                            src={`data:image/jpeg;base64,${item.gradcam.overlay_base64}`}
+                            alt={`Grad-CAM สำหรับ ${item.gradcam.class_name}`}
+                            className="h-56 w-full rounded-xl border border-slate-700 bg-slate-900 object-contain"
+                          />
+                        </div>
+                      </div>
+                      {item.gradcam.no_signal && (
+                        <p className="mt-2 text-xs text-amber-300">กรณีนี้ Grad-CAM ไม่มีสัญญาณเชิงบวกชัดเจน จึงไม่ควรตีความพื้นที่สีแดง</p>
+                      )}
+                      <p className="mt-3 text-xs leading-5 text-slate-400">
+                        แผนที่นี้เป็นคำอธิบายเชิงภาพของคะแนนโมเดลเท่านั้น ไม่ยืนยันชนิดพืชหรือพิสูจน์ว่าโมเดลตรวจพบลักษณะใบแต่ละข้อ
+                      </p>
+                    </div>
+                  )}
+                </section>
+
+                {item.result.taxonomy &&
+                  Object.keys(item.result.taxonomy).length > 0 && (
+                    <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-slate-950/50 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-black text-emerald-300">
+                          Taxonomy Information
+                        </h4>
+
+                        {item.result.taxonomy.taxonomy_status && (
+                          <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[10px] font-bold text-emerald-300">
+                            {item.result.taxonomy.taxonomy_status}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid gap-2 text-xs text-slate-300 md:grid-cols-2">
+                        <p>
+                          <span className="text-slate-500">ชื่อไทย:</span>{" "}
+                          {item.result.taxonomy.thai_name || "-"}
+                        </p>
+
+                        <p>
+                          <span className="text-slate-500">Common Name:</span>{" "}
+                          {item.result.taxonomy.common_name || "-"}
+                        </p>
+
+                        <p>
+                          <span className="text-slate-500">Scientific Name:</span>{" "}
+                          <i>{item.result.taxonomy.scientific_name || "-"}</i>
+                        </p>
+
+                        <p>
+                          <span className="text-slate-500">Kingdom:</span>{" "}
+                          {item.result.taxonomy.kingdom || "-"}
+                        </p>
+
+                        <p>
+                          <span className="text-slate-500">Family:</span>{" "}
+                          {item.result.taxonomy.family || "-"}
+                        </p>
+
+                        <p>
+                          <span className="text-slate-500">Genus:</span>{" "}
+                          <i>{item.result.taxonomy.genus || "-"}</i>
+                        </p>
+
+                        <p className="md:col-span-2">
+                          <span className="text-slate-500">Species:</span>{" "}
+                          <i>{item.result.taxonomy.species || "-"}</i>
+                        </p>
+                      </div>
+
+                      {item.result.taxonomy.note && (
+                        <p className="mt-3 rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-xs leading-5 text-slate-400">
+                          Note: {item.result.taxonomy.note}
+                        </p>
+                      )}
+                    </div>
+                  )}
               </div>
 
               <div>
@@ -605,6 +803,28 @@ function QueueResultCard({
                           }}
                         />
                       </div>
+
+                      {pred.taxonomy && (
+                        <div className="mt-3 rounded-xl border border-slate-700 bg-slate-950/50 p-3 text-xs leading-5 text-slate-400">
+                          <p>
+                            <span className="text-slate-500">Thai:</span>{" "}
+                            {pred.taxonomy.thai_name || "-"}
+                          </p>
+
+                          <p>
+                            <span className="text-slate-500">Scientific:</span>{" "}
+                            <i>{pred.taxonomy.scientific_name || "-"}</i>
+                          </p>
+
+                          <p>
+                            <span className="text-slate-500">Family:</span>{" "}
+                            {pred.taxonomy.family || "-"}{" "}
+                            <span className="text-slate-600">|</span>{" "}
+                            <span className="text-slate-500">Genus:</span>{" "}
+                            <i>{pred.taxonomy.genus || "-"}</i>
+                          </p>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -618,6 +838,37 @@ function QueueResultCard({
         </div>
       </div>
     </div>
+  );
+}
+
+function LeafReferenceGuide({ data }: { data: LeafCharacteristics }) {
+  return (
+    <section className="mt-4 rounded-2xl border border-sky-400/30 bg-sky-400/10 p-4" aria-label="ข้อมูลลักษณะใบอ้างอิง">
+      <h4 className="text-base font-bold text-sky-200">
+        🌿 ลักษณะใบที่ควรสังเกต: {data.thai_name}
+      </h4>
+      <p className="mt-1 text-sm text-slate-300">
+        ลักษณะใบทั่วไปของพืชที่ AI ทำนาย
+      </p>
+      <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-200">
+        {data.features.map((feature) => (
+          <li key={feature}>{feature}</li>
+        ))}
+      </ul>
+      <p className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
+        ข้อมูลด้านบนเป็นลักษณะทั่วไปของพืชที่ AI ทำนาย
+        เพื่อช่วยให้คุณเปรียบเทียบกับภาพใบไม้ของตนเอง
+        โดยระบบยังไม่ได้ยืนยันว่าภาพนี้มีลักษณะดังกล่าวครบทุกข้อ
+      </p>
+      <a
+        href={data.source_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-3 inline-block text-xs font-semibold text-sky-300 underline underline-offset-4 hover:text-sky-100"
+      >
+        ศึกษาข้อมูลพืชเพิ่มเติม: {data.source_title}
+      </a>
+    </section>
   );
 }
 

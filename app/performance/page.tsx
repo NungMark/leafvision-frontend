@@ -1,558 +1,155 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import AuthGuard from "../components/AuthGuard";
 import { API_BASE_URL, clearAuth, getAuthHeaders, getToken } from "../lib/auth";
+import { v12Metrics as v12 } from "../lib/v12Metrics";
 
-type ReportRow = {
-  className: string;
-  precision: string;
-  recall: string;
-  f1Score: string;
-  support: string;
-};
+function Stat({ title, value, sub, tint = "emerald" }: {title: string; value: string; sub: string; tint?: "emerald" | "amber" | "sky"}) {
+  const color = tint === "amber" ? "text-amber-300" : tint === "sky" ? "text-sky-300" : "text-emerald-300";
+  return <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-5">
+    <div className="text-sm font-semibold text-slate-400">{title}</div>
+    <div className={`mt-2 text-3xl font-black ${color}`}>{value}</div>
+    <div className="mt-2 text-xs leading-5 text-slate-400">{sub}</div>
+  </div>;
+}
 
-const reportRows: ReportRow[] = [
-  { className: "Bamboo Grass", precision: "0.8333", recall: "1.0000", f1Score: "0.9091", support: "20" },
-  { className: "Betel Vine", precision: "0.9524", recall: "1.0000", f1Score: "0.9756", support: "20" },
-  { className: "Hairy Basil", precision: "0.7857", recall: "1.0000", f1Score: "0.8800", support: "11" },
-  { className: "Holy Basil", precision: "0.8261", recall: "0.9500", f1Score: "0.8837", support: "20" },
-  { className: "Kaffer Lime", precision: "0.4667", recall: "0.3500", f1Score: "0.4000", support: "20" },
-  { className: "Kitchen Mint", precision: "1.0000", recall: "0.9000", f1Score: "0.9474", support: "20" },
-  { className: "Laurel Clockvine", precision: "0.9500", recall: "0.9500", f1Score: "0.9500", support: "20" },
-  { className: "Long Pepper", precision: "0.4348", recall: "0.5000", f1Score: "0.4651", support: "20" },
-  { className: "Mitragyna Speciosa", precision: "1.0000", recall: "1.0000", f1Score: "1.0000", support: "21" },
-  { className: "Siam Weed", precision: "1.0000", recall: "0.7000", f1Score: "0.8235", support: "30" },
-  { className: "Siamese Neem", precision: "0.9500", recall: "0.9500", f1Score: "0.9500", support: "20" },
-  { className: "Tiger Herbal", precision: "1.0000", recall: "0.9500", f1Score: "0.9744", support: "20" },
-  { className: "Wildbetal Leafbush", precision: "0.8696", recall: "1.0000", f1Score: "0.9302", support: "20" },
-];
-
-const weakClasses = [
-  {
-    name: "Kaffer Lime",
-    issue: "ถูกทำนายเป็น Long Pepper 12 จาก 20 รูป",
-    detail: "Recall ต่ำ เพราะโมเดลแยกจาก Long Pepper ได้ยาก",
-    f1: "0.4000",
-  },
-  {
-    name: "Long Pepper",
-    issue: "ถูกทำนายเป็น Kaffer Lime 8 จาก 20 รูป",
-    detail: "มีลักษณะใบใกล้เคียงกับ Kaffer Lime",
-    f1: "0.4651",
-  },
-  {
-    name: "Siam Weed",
-    issue: "ทายถูก 21 จาก 30 รูป",
-    detail: "Recall = 0.70 ยังต่ำกว่าคลาสอื่น",
-    f1: "0.8235",
-  },
-];
-
-const classNames = [
-  "Bamboo Grass",
-  "Betel Vine",
-  "Hairy Basil",
-  "Holy Basil",
-  "Kaffer Lime",
-  "Kitchen Mint",
-  "Laurel Clockvine",
-  "Long Pepper",
-  "Mitragyna Speciosa",
-  "Siam Weed",
-  "Siamese Neem",
-  "Tiger Herbal",
-  "Wildbetal Leafbush",
-];
-
-const confusionMatrix = [
-  [20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  [0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  [1, 0, 0, 0, 7, 0, 0, 12, 0, 0, 0, 0, 0],
-  [0, 0, 1, 0, 0, 18, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 0, 0, 0, 0, 19, 0, 0, 0, 0, 0, 0],
-  [0, 0, 0, 0, 8, 0, 1, 10, 0, 0, 1, 0, 0],
-  [0, 0, 0, 0, 0, 0, 0, 0, 21, 0, 0, 0, 0],
-  [1, 1, 1, 4, 0, 0, 0, 0, 0, 21, 0, 0, 2],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0],
-  [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 19, 0],
-  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20],
-];
-
-const splitComparisonRows = [
-  {
-    split: "70 / 20 / 10",
-    train: "1,826",
-    validation: "522",
-    test: "261",
-    accuracy: "87.36%",
-    loss: "0.2100",
-    macroF1: "0.8716",
-    macroAuc: "0.9903",
-  },
-  {
-    split: "60 / 20 / 20",
-    train: "1,565",
-    validation: "522",
-    test: "522",
-    accuracy: "83.52%",
-    loss: "0.3475",
-    macroF1: "0.8358",
-    macroAuc: "0.9911",
-  },
-  {
-    split: "50 / 20 / 30",
-    train: "1,304",
-    validation: "522",
-    test: "783",
-    accuracy: "86.72%",
-    loss: "0.2717",
-    macroF1: "0.8611",
-    macroAuc: "0.9916",
-  },
-];
-
-export default function PerformancePage() {
+function ModelPerformanceContent() {
   const router = useRouter();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isVerifier, setIsVerifier] = useState(false);
-
+  const [role, setRole] = useState("");
+  const [apiVersion, setApiVersion] = useState<"checking" | "v12" | "mismatch" | "offline">("checking");
+  const [apiModelLabel, setApiModelLabel] = useState("");
   useEffect(() => {
-    const fetchCurrentUser = async () => {
-      const token = getToken();
-
-      if (!token) {
-        setIsAdmin(false);
-        setIsVerifier(false);
-        return;
-      }
-
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/me`, {
-          headers: getAuthHeaders(),
-        });
-
-        if (!response.ok) {
-          setIsAdmin(false);
-          setIsVerifier(false);
-          return;
-        }
-
-        const data = await response.json();
-        const role = data?.user?.role;
-
-        setIsAdmin(role === "admin");
-        setIsVerifier(role === "verifier");
-      } catch (error) {
-        console.error(error);
-        setIsAdmin(false);
-        setIsVerifier(false);
-      }
-    };
-
-    fetchCurrentUser();
+    if (!getToken()) return;
+    fetch(`${API_BASE_URL}/auth/me`, { headers: getAuthHeaders() })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => setRole(data?.user?.role || ""))
+      .catch(() => setRole(""));
   }, []);
 
-  const logout = () => {
-    clearAuth();
-    router.push("/login");
-  };
+  // Distinguish the Colab evaluation results from the model actually deployed on Render.
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_BASE_URL}/health`, { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Health check failed: ${response.status}`);
+        return response.json();
+      })
+      .then((data) => {
+        if (!active) return;
+        const ok = data?.model_loaded === true && data?.model_version === "v12" && data?.number_of_classes === 12;
+        setApiVersion(ok ? "v12" : "mismatch");
+        setApiModelLabel(`API: ${String(data?.model_version || "unknown")}, ${String(data?.number_of_classes ?? "?")} classes`);
+      })
+      .catch(() => { if (active) setApiVersion("offline"); });
+    return () => { active = false; };
+  }, []);
 
-  return (
-    <AuthGuard>
-      <main className="min-h-screen overflow-hidden bg-[#020617] text-white">
-        <div className="pointer-events-none fixed inset-0">
-          <div className="absolute left-[-10%] top-[-10%] h-80 w-80 rounded-full bg-emerald-500/20 blur-3xl" />
-          <div className="absolute bottom-[-10%] right-[-10%] h-96 w-96 rounded-full bg-lime-400/10 blur-3xl" />
-          <div className="absolute left-[45%] top-[20%] h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
+  const total = v12.trainImages + v12.validationImages + v12.testImages;
+  const gap = (v12.internalAccuracy - v12.externalAccuracy).toFixed(2);
+
+  return <main className="min-h-screen bg-[#020617] text-white">
+    <nav className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/95 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-5 py-4">
+        <Link href="/" className="font-black text-xl">🌿 LeafVision <span className="text-emerald-300">AI</span></Link>
+        <div className="flex flex-wrap items-center gap-2 text-xs font-bold sm:text-sm">
+          <Link href="/" className="rounded-full border border-slate-700 px-3 py-2 text-slate-300 hover:text-white">Analyzer</Link>
+          <Link href="/performance" className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-emerald-300">Model Performance</Link>
+          <Link href="/history" className="rounded-full border border-slate-700 px-3 py-2 text-slate-300 hover:text-white">History</Link>
+          <Link href="/plants" className="rounded-full border border-slate-700 px-3 py-2 text-slate-300 hover:text-white">Plant Database</Link>
+          {(role === "admin" || role === "verifier") && <Link href="/verifier/review" className="rounded-full border border-slate-700 px-3 py-2 text-slate-300 hover:text-white">Verifier Review</Link>}
+          {role === "admin" && <Link href="/admin/users" className="rounded-full border border-slate-700 px-3 py-2 text-slate-300 hover:text-white">Admin Users</Link>}
+          <button onClick={() => { clearAuth(); router.replace("/login"); }} className="rounded-full border border-red-400/30 px-3 py-2 text-red-300">Logout</button>
         </div>
+      </div>
+    </nav>
 
-        <nav className="sticky top-0 z-50 border-b border-white/10 bg-[#020617]/80 backdrop-blur-xl">
-          <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-4 md:px-8">
-            <Link href="/" className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/15 text-xl">
-                🌿
-              </div>
+    <div className="mx-auto max-w-7xl space-y-7 px-5 py-8 md:px-8">
+      <header className="rounded-3xl border border-emerald-400/20 bg-gradient-to-br from-emerald-500/10 to-slate-900/80 p-6 md:p-8">
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">MobileNetV2 • Model v12 • {v12.classCount} Plant Classes</p>
+        <h1 className="mt-3 text-3xl font-black md:text-5xl">ผลการประเมินโมเดล <span className="text-emerald-300">v12</span></h1>
+        <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300 md:text-base">แสดงผลทดสอบภายในและชุดภาพภายนอกแยกกัน เพื่อให้เห็นประสิทธิภาพของโมเดลและข้อจำกัดในการจำแนกภาพใหม่อย่างตรงไปตรงมา ผลตัวเลขในหน้านี้เป็นผลจากการทดลองใน Google Colab ไม่ได้คำนวณจาก Prediction Logs ของเว็บ</p>
+        <p role="status" className={`mt-4 rounded-xl border px-4 py-3 text-sm ${apiVersion === "v12" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-amber-500/30 bg-amber-500/10 text-amber-200"}`}>
+          {apiVersion === "checking" && "กำลังตรวจเวอร์ชันโมเดลที่ Backend ใช้งาน..."}
+          {apiVersion === "v12" && `Backend เชื่อมต่อโมเดล v12 ถูกต้อง (${apiModelLabel})`}
+          {apiVersion === "mismatch" && `คำเตือน: Backend ยังไม่ตรงกับ v12 (${apiModelLabel}) — กราฟด้านล่างเป็นผลทดลอง Colab v12 ไม่ใช่โมเดลของ API ปัจจุบัน`}
+          {apiVersion === "offline" && "ยังติดต่อ Backend เพื่อตรวจรุ่นโมเดลไม่ได้ — กราฟด้านล่างเป็นผลทดลอง Colab v12"}
+        </p>
+      </header>
 
-              <div>
-                <p className="text-lg font-black leading-none">
-                  LeafVision <span className="text-emerald-300">AI</span>
-                </p>
-                <p className="mt-1 text-xs text-slate-400">
-                  Plant Image Classification
-                </p>
-              </div>
-            </Link>
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat title="Internal Test Accuracy" value={`${v12.internalAccuracy.toFixed(2)}%`} sub={`${v12.testCorrect} / ${v12.testImages} ภาพ (ชุดทดสอบภายใน)`}/>
+        <Stat title="External Test Accuracy" value={`${v12.externalAccuracy.toFixed(2)}%`} sub={`${v12.externalTestCorrect} / ${v12.externalTestImages} ภาพ (ภาพจากแหล่งภายนอก)`} tint="amber"/>
+        <Stat title="Internal Macro F1" value={`${v12.internalMacroF1.toFixed(2)}%`} sub="F1-score เฉลี่ย 12 คลาส" tint="sky"/>
+        <Stat title="Internal Test Loss" value={v12.testLoss.toFixed(4)} sub="ทดสอบโมเดล v12 หลัง Fine-tuning"/>
+      </section>
 
-            <div className="flex items-center gap-2">
-              <Link
-                href="/"
-                className="rounded-full border border-slate-700 px-4 py-2 text-sm font-bold text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
-              >
-                Analyzer
-              </Link>
-
-              <Link
-                href="/performance"
-                className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm font-bold text-emerald-300 transition hover:bg-emerald-400/20"
-              >
-                Model Performance
-              </Link>
-
-              <Link
-                href="/history"
-                className="rounded-full border border-slate-700 px-4 py-2 text-sm font-bold text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
-              >
-                History Logs
-              </Link>
-              {(isAdmin || isVerifier) && (
-                <Link
-                  href="/verifier/review"
-                  className="rounded-full border border-slate-700 px-4 py-2 text-sm font-bold text-slate-300 transition hover:border-sky-400 hover:text-sky-300"
-                >
-                  Verifier Review
-                </Link>
-              )}
-
-              {isAdmin && (
-                <Link
-                  href="/admin/users"
-                  className="rounded-full border border-slate-700 px-4 py-2 text-sm font-bold text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
-                >
-                  Admin Users
-                </Link>
-              )}
-
-              <button
-                onClick={logout}
-                className="rounded-full border border-red-400/30 px-4 py-2 text-sm font-bold text-red-300 transition hover:bg-red-400/10"
-              >
-                Logout
-              </button>
-            </div>
+      <section className="grid gap-5 lg:grid-cols-2">
+        <article className="rounded-3xl border border-white/10 bg-slate-900/70 p-6">
+          <h2 className="text-xl font-black">เปรียบเทียบ Internal vs External</h2>
+          {[{label:"Internal Test",value:v12.internalAccuracy,color:"bg-emerald-500"},{label:"External Test",value:v12.externalAccuracy,color:"bg-amber-500"}].map((x) => <div key={x.label} className="mt-5">
+            <div className="mb-2 flex justify-between text-sm"><span>{x.label}</span><strong>{x.value.toFixed(2)}%</strong></div>
+            <div className="h-3 overflow-hidden rounded-full bg-slate-800"><div className={`h-full rounded-full ${x.color}`} style={{width:`${x.value}%`}}/></div>
+          </div>)}
+          <p className="mt-5 text-sm leading-6 text-amber-100">ผลต่าง <strong>{gap} จุดเปอร์เซ็นต์</strong> สะท้อนว่าความแม่นยำกับภาพภายนอกยังต่ำกว่าชุดทดสอบภายในมาก</p>
+          <p className="mt-2 text-xs leading-5 text-slate-400">External Top-1 Accuracy ไม่รวมชุดพืชนอกคลาส Long Pepper 10 ภาพ และไม่ใช่ Display Accuracy หลังใช้เกณฑ์ Unknown 60% ซึ่งมีค่า {v12.externalDisplayAccuracy.toFixed(2)}%</p>
+        </article>
+        <article className="rounded-3xl border border-white/10 bg-slate-900/70 p-6">
+          <h2 className="text-xl font-black">Dataset v12 — แบ่ง 60 / 20 / 20</h2>
+          <p className="mt-2 text-sm text-slate-400">พืช {v12.classCount} คลาส รวม {total.toLocaleString()} ภาพ แบ่งโดยพิจารณากลุ่มภาพที่เกี่ยวข้องกันเพื่อลด Data Leakage</p>
+          <div className="mt-5 grid grid-cols-3 gap-2 sm:gap-4">
+            {[{label:"Train",n:v12.trainImages},{label:"Validation",n:v12.validationImages},{label:"Test",n:v12.testImages}].map((x) => <div key={x.label} className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-center">
+              <p className="text-xs text-slate-400">{x.label}</p><p className="mt-1 text-xl font-black text-emerald-300 sm:text-2xl">{x.n.toLocaleString()}</p><p className="text-xs text-slate-500">{(100*x.n/total).toFixed(1)}%</p>
+            </div>)}
           </div>
-        </nav>
+          <p className="mt-5 text-sm text-slate-300">การตรวจภาพด้วย dHash และการจัดกลุ่มช่วยลดความเสี่ยงภาพคล้ายกันข้ามชุดข้อมูล แต่ไม่ได้รับประกันว่าตรวจพบทุกความสัมพันธ์ของภาพ</p>
+        </article>
+      </section>
 
-        <section className="relative mx-auto w-full max-w-7xl px-5 py-8 md:px-8">
-          <header className="mb-8 rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-2xl backdrop-blur">
-            <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="mb-5 flex flex-wrap items-center gap-3">
-                  <Link
-                    href="/"
-                    className="inline-flex rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
-                  >
-                    ← Back to Analyzer
-                  </Link>
+      <section className="rounded-3xl border border-white/10 bg-slate-900/70 p-6">
+        <h2 className="text-xl font-black">Confusion Matrix — ชุดทดสอบภายใน</h2>
+        <p className="mt-2 text-sm text-slate-400">ทำนายถูก {v12.testCorrect} ภาพจาก {v12.testImages} ภาพ ผิดเพียง 5 ภาพ ตารางด้านล่างเป็นผลของ 12 คลาส v12 จริง</p>
+        <div className="mt-5 overflow-hidden rounded-xl bg-white p-2 sm:p-5">
+          <Image src="/reports/confusion_matrix_v12.png" width={1320} height={1184} alt="Confusion matrix ของ LeafVision AI MobileNetV2 v12 จำนวน 12 คลาส" className="h-auto w-full object-contain" unoptimized />
+        </div>
+        <a className="mt-3 inline-block text-sm font-semibold text-emerald-300 underline" href="/reports/confusion_matrix_v12.png" target="_blank" rel="noreferrer">เปิดภาพ Confusion Matrix ขนาดเต็ม</a>
+      </section>
 
-                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs font-semibold text-emerald-300">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                    Model Evaluation Report
-                  </div>
-                </div>
+      <section className="grid gap-5 lg:grid-cols-2">
+        {[{src:"/reports/phase2_accuracy.png",title:"กราฟ Training และ Validation Accuracy"},{src:"/reports/phase2_loss.png",title:"กราฟ Training และ Validation Loss"}].map((x) => <article key={x.src} className="rounded-3xl border border-white/10 bg-slate-900/70 p-6">
+          <h2 className="mb-4 text-lg font-black">{x.title} — Fine-tuning v12</h2>
+          <Image src={x.src} width={1100} height={720} alt={x.title} className="h-auto w-full rounded-xl bg-white object-contain" unoptimized/>
+        </article>)}
+      </section>
 
-                <h1 className="text-4xl font-black tracking-tight md:text-6xl">
-                  Model{" "}
-                  <span className="bg-gradient-to-r from-emerald-300 to-lime-300 bg-clip-text text-transparent">
-                    Performance
-                  </span>
-                </h1>
+      <section className="rounded-3xl border border-white/10 bg-slate-900/70 p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-black">Classification Report — Internal Test v12</h2>
+          <a href="/reports/classification_report_v12.csv" className="text-sm font-semibold text-emerald-300 underline" download>ดาวน์โหลด CSV จริง</a>
+        </div>
+        <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[660px] text-left text-sm">
+          <thead><tr className="border-b border-white/20 text-slate-400"><th className="px-2 py-3">Plant Class</th><th className="px-2 py-3 text-right">Precision</th><th className="px-2 py-3 text-right">Recall</th><th className="px-2 py-3 text-right">F1</th><th className="px-2 py-3 text-right">Support</th></tr></thead>
+          <tbody>{v12.reportRows.map((x) => <tr key={x.name} className="border-b border-white/10"><td className="px-2 py-3 font-semibold">{x.name}</td><td className="px-2 py-3 text-right">{x.precision.toFixed(2)}%</td><td className="px-2 py-3 text-right">{x.recall.toFixed(2)}%</td><td className="px-2 py-3 text-right font-semibold text-emerald-300">{x.f1.toFixed(2)}%</td><td className="px-2 py-3 text-right">{x.support}</td></tr>)}</tbody>
+        </table></div>
+      </section>
 
-                <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-300 md:text-lg">
-                  สรุปผลการประเมินโมเดล MobileNetV2 Fine-tuned
-                  สำหรับจำแนกภาพใบไม้ 13 ชนิด พร้อม Accuracy, Split Comparison,
-                  ROC/AUC, Confusion Matrix และ Classification Report
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-4">
-              <MetricCard label="Final Accuracy" value="86.72%" detail="50/20/30 split" tone="emerald" />
-              <MetricCard label="Test Loss" value="0.2717" detail="Lower is better" tone="sky" />
-              <MetricCard label="Macro AUC" value="0.9916" detail="One-vs-Rest ROC" tone="lime" />
-              <MetricCard label="Test Images" value="783" detail="Large test set" tone="yellow" />
-            </div>
-          </header>
-
-          <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-            <section className="space-y-6">
-              <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl backdrop-blur">
-                <h2 className="text-2xl font-black">Dataset Summary</h2>
-
-                <p className="mt-2 text-sm leading-7 text-slate-400">
-                  Dataset ถูกแบ่งเป็น train, validation และ test เพื่อฝึกโมเดล
-                  จูนโมเดล และประเมินด้วยภาพที่โมเดลไม่เคยเห็นมาก่อน
-                </p>
-
-                <div className="mt-5 grid gap-4 sm:grid-cols-3">
-                  <DatasetCard split="Train" images="1,304" purpose="ใช้ฝึกโมเดล" />
-                  <DatasetCard split="Validation" images="522" purpose="ใช้จูนโมเดล" />
-                  <DatasetCard split="Test" images="783" purpose="ใช้ประเมินจริง" />
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl backdrop-blur">
-                <h2 className="text-2xl font-black">Split Comparison</h2>
-
-                <p className="mt-2 text-sm leading-7 text-slate-400">
-                  เพื่อเพิ่มความน่าเชื่อถือของโมเดล มีการทดลองแบ่งข้อมูลหลายรูปแบบ
-                  และพบว่าเมื่อเพิ่ม test set เป็น 30% โมเดลยังรักษา Accuracy ได้ดี
-                </p>
-
-                <div className="mt-5 overflow-x-auto">
-                  <table className="w-full min-w-[820px] border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-700 text-left text-slate-400">
-                        <th className="p-3">Split</th>
-                        <th className="p-3 text-right">Train</th>
-                        <th className="p-3 text-right">Val</th>
-                        <th className="p-3 text-right">Test</th>
-                        <th className="p-3 text-right">Accuracy</th>
-                        <th className="p-3 text-right">Loss</th>
-                        <th className="p-3 text-right">Macro F1</th>
-                        <th className="p-3 text-right">Macro AUC</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {splitComparisonRows.map((row) => (
-                        <tr key={row.split} className="border-b border-slate-800">
-                          <td className="p-3 font-bold text-white">{row.split}</td>
-                          <td className="p-3 text-right text-slate-300">{row.train}</td>
-                          <td className="p-3 text-right text-slate-300">{row.validation}</td>
-                          <td className="p-3 text-right text-slate-300">{row.test}</td>
-                          <td className="p-3 text-right font-black text-emerald-300">{row.accuracy}</td>
-                          <td className="p-3 text-right text-slate-300">{row.loss}</td>
-                          <td className="p-3 text-right text-slate-300">{row.macroF1}</td>
-                          <td className="p-3 text-right font-bold text-sky-300">{row.macroAuc}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl backdrop-blur">
-                <h2 className="text-2xl font-black">Key Findings</h2>
-
-                <p className="mt-2 text-sm leading-7 text-slate-400">
-                  โมเดลทำงานได้ดีในหลายคลาส แต่ยังมีบางคลาสที่สับสนกัน
-                  โดยเฉพาะคลาสที่ลักษณะใบใกล้เคียงกัน
-                </p>
-
-                <div className="mt-5 space-y-3">
-                  {weakClasses.map((item) => (
-                    <div key={item.name} className="rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <h3 className="font-bold text-yellow-200">{item.name}</h3>
-                          <p className="mt-1 text-sm font-semibold text-yellow-100/90">{item.issue}</p>
-                          <p className="mt-1 text-sm text-yellow-100/70">{item.detail}</p>
-                        </div>
-
-                        <div className="rounded-full border border-yellow-400/30 bg-yellow-400/10 px-3 py-1 text-xs font-bold text-yellow-200">
-                          F1 {item.f1}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/10 p-6 shadow-2xl backdrop-blur">
-                <h2 className="text-2xl font-black text-emerald-200">Conclusion</h2>
-
-                <p className="mt-3 text-sm leading-7 text-emerald-50/90">
-                  โมเดลหลัง fine-tuning สามารถจำแนกพืช 13 ชนิดได้ดี โดย split
-                  50/20/30 ได้ Test Accuracy 86.72% และ Macro AUC 0.9916
-                  แสดงว่าโมเดลยังรักษาประสิทธิภาพได้แม้ใช้ test set ขนาดใหญ่ขึ้น
-                  จุดที่ควรปรับปรุงต่อคือเพิ่มข้อมูลของ Kaffer Lime และ Long Pepper
-                  รวมถึงพัฒนา segmentation หรือ class-specific threshold ในอนาคต
-                </p>
-              </div>
-            </section>
-
-            <section className="space-y-6">
-              <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl backdrop-blur">
-                <h2 className="text-2xl font-black">Confusion Matrix</h2>
-
-                <p className="mt-2 text-sm leading-7 text-slate-400">
-                  ตารางนี้แสดงจำนวนภาพจริงเทียบกับผลที่โมเดลทำนาย
-                  ค่าแนวทแยงคือจำนวนที่ทำนายถูก
-                </p>
-
-                <div className="mt-5 max-h-[560px] overflow-auto rounded-2xl border border-slate-700">
-                  <table className="min-w-[1100px] border-collapse text-xs">
-                    <thead>
-                      <tr>
-                        <th className="sticky left-0 top-0 z-20 bg-slate-950 p-2 text-left text-slate-400">
-                          True \ Pred
-                        </th>
-                        {classNames.map((name) => (
-                          <th key={name} className="sticky top-0 bg-slate-950 p-2 text-slate-400">
-                            {shortName(name)}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {confusionMatrix.map((row, rowIndex) => (
-                        <tr key={classNames[rowIndex]}>
-                          <td className="sticky left-0 z-10 bg-slate-950 p-2 font-bold text-slate-300">
-                            {shortName(classNames[rowIndex])}
-                          </td>
-
-                          {row.map((value, colIndex) => {
-                            const isCorrect = rowIndex === colIndex;
-                            const isProblem =
-                              (classNames[rowIndex] === "Kaffer Lime" && classNames[colIndex] === "Long Pepper") ||
-                              (classNames[rowIndex] === "Long Pepper" && classNames[colIndex] === "Kaffer Lime");
-
-                            return (
-                              <td
-                                key={`${rowIndex}-${colIndex}`}
-                                className={`border border-slate-800 p-2 text-center font-semibold ${
-                                  isCorrect
-                                    ? "bg-emerald-400/20 text-emerald-200"
-                                    : isProblem
-                                    ? "bg-yellow-400/20 text-yellow-200"
-                                    : value > 0
-                                    ? "bg-red-400/10 text-red-200"
-                                    : "text-slate-600"
-                                }`}
-                              >
-                                {value}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl backdrop-blur">
-                <h2 className="text-2xl font-black">Classification Report</h2>
-
-                <p className="mt-2 text-sm leading-7 text-slate-400">
-                  Precision, Recall และ F1-score ใช้วิเคราะห์โมเดลราย class
-                </p>
-
-                <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-700">
-                  <table className="w-full min-w-[720px] border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-700 bg-slate-950/80 text-left text-slate-400">
-                        <th className="p-3">Class</th>
-                        <th className="p-3 text-right">Precision</th>
-                        <th className="p-3 text-right">Recall</th>
-                        <th className="p-3 text-right">F1-score</th>
-                        <th className="p-3 text-right">Support</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {reportRows.map((row) => (
-                        <tr key={row.className} className="border-b border-slate-800">
-                          <td className="p-3 font-bold text-white">{row.className}</td>
-                          <td className="p-3 text-right text-slate-300">{row.precision}</td>
-                          <td className="p-3 text-right text-slate-300">{row.recall}</td>
-                          <td
-                            className={`p-3 text-right font-black ${
-                              Number(row.f1Score) < 0.5
-                                ? "text-red-300"
-                                : Number(row.f1Score) < 0.85
-                                ? "text-yellow-300"
-                                : "text-emerald-300"
-                            }`}
-                          >
-                            {row.f1Score}
-                          </td>
-                          <td className="p-3 text-right text-slate-300">{row.support}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <footer className="mt-8 rounded-3xl border border-white/10 bg-white/[0.03] p-5 text-center text-sm text-slate-400 backdrop-blur">
-            <p>
-              MobileNetV2 Fine-tuned • Split 50/20/30 • Test Accuracy{" "}
-              <span className="font-bold text-emerald-300">86.72%</span> •
-              Macro AUC <span className="font-bold text-sky-300">0.9916</span>
-            </p>
-          </footer>
-        </section>
-      </main>
-    </AuthGuard>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  detail,
-  tone,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  tone: "emerald" | "sky" | "lime" | "yellow";
-}) {
-  const toneClass = {
-    emerald: "text-emerald-300",
-    sky: "text-sky-300",
-    lime: "text-lime-300",
-    yellow: "text-yellow-300",
-  }[tone];
-
-  return (
-    <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-5">
-      <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">{label}</p>
-      <p className={`mt-3 text-4xl font-black ${toneClass}`}>{value}</p>
-      <p className="mt-2 text-sm text-slate-400">{detail}</p>
+      <section className="rounded-3xl border border-amber-500/20 bg-slate-900/70 p-6">
+        <h2 className="text-xl font-black">External Error Analysis — คลาสที่ควรปรับปรุง</h2>
+        <p className="mt-2 text-sm text-slate-400">ข้อมูล External Test มาจาก 117 ภาพที่มีป้ายกำกับหลังตัด Exact Duplicates; แต่ละคลาสมีตัวอย่างเพียง 9–10 ภาพ</p>
+        <div className="mt-5 grid gap-3 md:grid-cols-4">
+          {v12.externalRows.filter((x) => ["Bamboo Grass","Holy Basil","Siam Weed","Tiger Herbal"].includes(x.name)).map((x) => <div key={x.name} className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+            <p className="font-bold">{x.name}</p><p className="mt-2 text-2xl font-black text-amber-300">{x.accuracy.toFixed(2)}%</p><p className="text-xs text-slate-400">ถูก {x.correct}/{x.total} ภาพ</p>
+          </div>)}
+        </div>
+        <p className="mt-5 text-sm leading-6 text-amber-100">ทั้ง 4 คลาสมีข้อผิดพลาดรวม 30 ภาพ คิดเป็นครึ่งหนึ่งของภาพที่ทำนายผิดใน External Test ทั้งหมด (60 ภาพ) โดยมีแนวโน้มทำนายคลาสอื่นเป็น Siam Weed มากเกินไป</p>
+        <p className="mt-2 text-sm text-slate-400">สาเหตุที่เป็นไปได้คือความแตกต่างระหว่างภาพฝึกกับภาพภายนอก ความหลากหลายของต้นฉบับ และคุณภาพป้ายกำกับ ซึ่งยังต้องตรวจสอบก่อนสรุปสาเหตุที่แน่ชัด</p>
+        <a href="/reports/external_per_class_v12_vs_v3.csv" download className="mt-3 inline-block text-sm font-semibold text-emerald-300 underline">ดาวน์โหลดผล External รายคลาส</a>
+      </section>
+      <footer className="py-4 text-center text-sm text-slate-400">LeafVision AI v12 • 12 Classes • Internal {v12.internalAccuracy.toFixed(2)}% • External {v12.externalAccuracy.toFixed(2)}% • ผลประเมินจาก Google Colab</footer>
     </div>
-  );
+  </main>;
 }
 
-function DatasetCard({
-  split,
-  images,
-  purpose,
-}: {
-  split: string;
-  images: string;
-  purpose: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
-      <p className="text-sm font-bold text-slate-300">{split}</p>
-      <p className="mt-2 text-3xl font-black text-emerald-300">{images}</p>
-      <p className="mt-1 text-xs text-slate-400">{purpose}</p>
-    </div>
-  );
-}
-
-function shortName(name: string) {
-  return name
-    .replace("Bamboo Grass", "Bamboo")
-    .replace("Betel Vine", "Betel")
-    .replace("Hairy Basil", "Hairy")
-    .replace("Holy Basil", "Holy")
-    .replace("Kaffer Lime", "Kaffer")
-    .replace("Kitchen Mint", "Mint")
-    .replace("Laurel Clockvine", "Laurel")
-    .replace("Long Pepper", "Pepper")
-    .replace("Mitragyna Speciosa", "Mitragyna")
-    .replace("Siam Weed", "Weed")
-    .replace("Siamese Neem", "Neem")
-    .replace("Tiger Herbal", "Tiger")
-    .replace("Wildbetal Leafbush", "Wildbetal");
-}
+export default function PerformancePage() { return <AuthGuard><ModelPerformanceContent /></AuthGuard>; }
