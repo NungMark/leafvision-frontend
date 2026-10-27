@@ -8,8 +8,8 @@ import { API_BASE_URL, saveAuth } from "../lib/auth";
 export default function LoginPage() {
   const router = useRouter();
 
-  const [identifier, setIdentifier] = useState("admin");
-  const [password, setPassword] = useState("admin12345");
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -86,7 +86,7 @@ export default function LoginPage() {
 
             <div className="mt-6 grid max-w-xl gap-3 sm:grid-cols-3">
               <InfoCard label="Model" value="MobileNetV2" />
-              <InfoCard label="Classes" value="13" />
+              <InfoCard label="Classes" value="12" />
               <InfoCard label="Security" value="JWT" />
             </div>
           </div>
@@ -115,7 +115,7 @@ export default function LoginPage() {
                   value={identifier}
                   onChange={(event) => setIdentifier(event.target.value)}
                   className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-emerald-400"
-                  placeholder="admin หรือ example@gmail.com"
+                  placeholder="Username หรือ Email"
                   autoComplete="username"
                 />
               </div>
@@ -129,7 +129,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-emerald-400"
-                  placeholder="admin12345"
+                  placeholder="กรอกรหัสผ่าน"
                   autoComplete="current-password"
                 />
               </div>
@@ -142,12 +142,6 @@ export default function LoginPage() {
             >
               {loading ? "Logging in..." : "Login"}
             </button>
-
-            <p className="mt-4 rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-3 text-xs leading-5 text-yellow-100/90">
-              Default account สำหรับทดสอบ: username{" "}
-              <span className="font-bold">admin</span>, password{" "}
-              <span className="font-bold">admin12345</span>
-            </p>
 
             <p className="mt-4 text-center text-sm text-slate-400">
               ยังไม่มีบัญชี?{" "}
